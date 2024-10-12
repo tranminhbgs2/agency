@@ -16,8 +16,12 @@ public_html/storage
 public_html/hot
 
 storage/*.key
+storage/logs/*.log
 .env
+.htaccess
 Homestead.yaml
 Homestead.json
 /.vagrant
 .phpunit.result.cache
+/storage/framework/cache/data
+/storage/framework
