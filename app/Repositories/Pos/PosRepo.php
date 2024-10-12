@@ -192,7 +192,7 @@ class PosRepo extends BaseRepo
                 $sql->select(['id', 'name']);
             },
             'activeAgents' => function ($sql) {
-                $sql->select(['agency.id', 'agency.name', 'agency.phone', 'agent_pos.pos_id', 'agent_pos.fee'])->first();
+                $sql->select(['agency.id', 'agency.manager_id', 'agency.name', 'agency.phone', 'agent_pos.pos_id', 'agent_pos.fee'])->first();
             },
             'bankAccount' => function ($sql) {
                 $sql->select(['id', 'bank_code', 'account_number', 'account_name', 'balance', 'status', 'pos_id']);
@@ -311,6 +311,12 @@ class PosRepo extends BaseRepo
         $tran = Pos::where('id', $id)->with([
             'hokinhdoanh' => function ($sql) {
                 $sql->select(['id', 'name']);
+            },
+            'activeAgents' => function ($sql) {
+                $sql->select(['agency.id', 'agency.manager_id', 'agency.name', 'agency.phone', 'agent_pos.pos_id', 'agent_pos.fee']);
+            },
+            'bankAccount' => function ($sql) {
+                $sql->select(['id', 'bank_code', 'account_number', 'account_name', 'balance', 'status', 'pos_id']);
             },
         ]);
 

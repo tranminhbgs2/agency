@@ -91,7 +91,7 @@ class Pos extends Model
         return $this->belongsToMany(Agent::class, 'agent_pos')
             ->wherePivot('status', Constants::USER_STATUS_ACTIVE)
             ->withPivot('status', 'fee')
-            ->select('agency.id', 'agent_pos.pos_id', 'agent_pos.agent_id', 'agent_pos.status', 'agent_pos.fee', 'agent_pos.created_at', 'agent_pos.updated_at');
+            ->select('agency.id', 'agency.manager_id', 'agent_pos.pos_id', 'agent_pos.agent_id', 'agent_pos.status', 'agent_pos.fee', 'agent_pos.created_at', 'agent_pos.updated_at');
     }
 
     /**
@@ -103,7 +103,7 @@ class Pos extends Model
             ->wherePivot('status', Constants::USER_STATUS_ACTIVE)
             ->wherePivot('agent_id', $agent_id)
             ->withPivot('status', 'fee')
-            ->select('agency.id', 'agent_pos.pos_id', 'agent_pos.agent_id', 'agent_pos.status', 'agent_pos.fee', 'agent_pos.created_at', 'agent_pos.updated_at')
+            ->select('agency.id', 'agency.manager_id', 'agent_pos.pos_id', 'agent_pos.agent_id', 'agent_pos.status', 'agent_pos.fee', 'agent_pos.created_at', 'agent_pos.updated_at')
             ->first();
     }
     public function activeByAgentsDate($agent_id)
@@ -119,7 +119,7 @@ class Pos extends Model
             })
             ->where('agency.deleted_at', null) // Bạn cần thêm điều kiện này nếu agency có soft delete
             ->withPivot('status', 'fee')
-            ->select('agency.id', 'agent_pos.pos_id', 'agent_pos.agent_id', 'agent_pos.status', 'agent_pos.fee', 'agent_pos.created_at', 'agent_pos.updated_at')
+            ->select('agency.id', 'agency.manager_id', 'agent_pos.pos_id', 'agent_pos.agent_id', 'agent_pos.status', 'agent_pos.fee', 'agent_pos.created_at', 'agent_pos.updated_at')
             ->first();
     }
     /**
@@ -130,6 +130,6 @@ class Pos extends Model
         return $this->belongsToMany(Agent::class, 'agent_pos')
             ->wherePivot('status', Constants::USER_STATUS_ACTIVE)
             ->withPivot('status', 'fee')
-            ->select('agency.id', 'agent_pos.pos_id', 'agent_pos.agent_id', 'agent_pos.status', 'agent_pos.fee', 'agent_pos.created_at', 'agent_pos.updated_at');
+            ->select('agency.id', 'agency.manager_id', 'agent_pos.pos_id', 'agent_pos.agent_id', 'agent_pos.status', 'agent_pos.fee', 'agent_pos.created_at', 'agent_pos.updated_at');
     }
 }

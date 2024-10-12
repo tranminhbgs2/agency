@@ -234,6 +234,23 @@ class PosController extends Controller
         $params['fee'] = request('fee', 0);
         if ($params['pos_id']) {
 
+            $pos = $this->pos_repo->getById($params['pos_id']);
+            if (!$pos) {
+                return response()->json([
+                    'code' => 422,
+                    'error' => 'Máy POS không tồn tại',
+                    'data' => null
+                ]);
+            }
+
+            if($pos->price_pos > 0) {
+                return response()->json([
+                    'code' => 422,
+                    'error' => 'Máy POS vẫn còn tiền tồn pos',
+                    'data' => null
+                ]);
+            }
+
             $params['created_by'] = auth()->user()->id; // người cập nhật
 
             $resutl = $this->pos_repo->assignPosToAgent($params);

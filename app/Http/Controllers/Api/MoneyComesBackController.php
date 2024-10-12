@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Helpers\Constants;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\MoneyComesBack\ApproveRequest;
 use App\Http\Requests\MoneyComesBack\ChangeStatusRequest;
 use App\Http\Requests\MoneyComesBack\DeleteRequest;
 use App\Http\Requests\MoneyComesBack\GetDetailRequest;
@@ -11,13 +12,19 @@ use App\Http\Requests\MoneyComesBack\KetToanLoRequest;
 use App\Http\Requests\MoneyComesBack\ListingRequest;
 use App\Http\Requests\MoneyComesBack\StoreRequest;
 use App\Http\Requests\MoneyComesBack\UpdateRequest;
-use App\Models\Pos;
+use App\Http\Requests\MoneyComesBack\UploadRequest;
+use App\Http\Requests\MoneyComesBack\WithdrawRequest;
+use App\Models\Output;
+use App\Repositories\Agent\AgentRepo;
+use App\Repositories\BankAccount\BankAccountRepo;
 use App\Repositories\MoneyComesBack\MoneyComesBackRepo;
 use App\Repositories\Pos\PosRepo;
 use App\Repositories\Transaction\TransactionRepo;
 use App\Repositories\Transfer\TransferRepo;
 use App\Repositories\WithdrawPos\WithdrawPosRepo;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
 
 class MoneyComesBackController extends Controller
 {
@@ -26,14 +33,18 @@ class MoneyComesBackController extends Controller
     protected $transfer_repo;
     protected $transaction_repo;
     protected $withdrawPosRepo;
+    protected $agentRepo;
+    protected $bankAccRepo;
 
-    public function __construct(MoneyComesBackRepo $moneyRepo, PosRepo $posRepo, TransferRepo $transferRepo, TransactionRepo $transactionRepo, WithdrawPosRepo $withdrawPosRepo)
+    public function __construct(MoneyComesBackRepo $moneyRepo, PosRepo $posRepo, TransferRepo $transferRepo, TransactionRepo $transactionRepo, WithdrawPosRepo $withdrawPosRepo, AgentRepo $agentRepo, BankAccountRepo $bankAccRepo)
     {
         $this->money_repo = $moneyRepo;
         $this->pos_repo = $posRepo;
         $this->transfer_repo = $transferRepo;
         $this->transaction_repo = $transactionRepo;
         $this->withdrawPosRepo = $withdrawPosRepo;
+        $this->agentRepo = $agentRepo;
+        $this->bankAccRepo = $bankAccRepo;
     }
 
     /**
@@ -99,6 +110,13 @@ class MoneyComesBackController extends Controller
 
         $params['date_from'] = str_replace('/', '-', $params['date_from']);
         $params['date_to'] = str_replace('/', '-', $params['date_to']);
+
+        if(Auth::user()->account_type == Constants::ACCOUNT_TYPE_AGENCY){
+            $agent = $this->agentRepo->getByUserId(Auth::id());
+            if($agent){
+                $params['agent_id'] = $agent->id;
+            }
+        }
 
         $params_transfer['agent_id'] = $params['agent_id'];
         $params_transfer['agent_date_to'] =  $params['date_to'];
@@ -213,18 +231,49 @@ class MoneyComesBackController extends Controller
         $params['balance'] = floatval(request('balance', 0)); // tiền  tổng
         $params['agent_id'] = request('agent_id', 0); // id đại lý
         $params['time_end'] = request('time_end', null); // id đại lý
+        $params['img_bill'] = request('img_bill', null); // id đại lý
+
+        $img_bill = Output::where('url', $params['img_bill'])->first();
+        if(!$img_bill){
+            return response()->json([
+                'code' => 400,
+                'error' => 'Hình ảnh hóa đơn không tồn tại',
+                'data' => null
+            ]);
+        }
         if ($params['time_end']) {
             $params['time_end'] = str_replace('/', '-', $params['time_end']);
             $params['time_process'] = date('Y-m-d', strtotime($params['time_end']));
         }
         if ($params['agent_id'] > 0) {
-            if ($params['fee_agent'] > 0) {
-                $params['payment_agent'] = $params['total_price'] - $params['fee_agent'] * $params['total_price'] / 100;
-            } else {
-                $params['payment_agent'] = 0;
+            $agent  = $this->agentRepo->getById($params['agent_id']);
+            if(!$agent){
+                return response()->json([
+                    'code' => 400,
+                    'error' => 'Đại lý không tồn tại',
+                    'data' => null
+                ]);
             }
             $pos = $this->pos_repo->getById($params['pos_id']);
             if ($pos) {
+                if ($pos->activeAgents && $pos->activeAgents->isNotEmpty()) {
+                    if($pos->activeAgents[0]->manager_id !== Auth::id()){
+                        return response()->json([
+                            'code' => 400,
+                            'error' => 'Máy POS không thuộc quản lý của bạn',
+                            'data' => null
+                        ]);
+                    } else {
+                        $params['payment_agent'] = $params['total_price'] - $pos->activeAgents[0]->fee * $params['total_price'] / 100;
+                    }
+                } else {
+                    return response()->json([
+                        'code' => 400,
+                        'error' => 'Máy POS không có đại lý hoạt động',
+                        'data' => null
+                    ]);
+                }
+
                 $params['hkd_id'] = $pos->hkd_id;
                 $params['fee'] = $pos->total_fee;
                 $params['payment'] = $params['total_price'] - $params['fee'] * $params['total_price'] / 100;
@@ -252,6 +301,35 @@ class MoneyComesBackController extends Controller
             'error' => 'Thêm mới không thành công',
             'data' => null
         ]);
+    }
+
+    public function upload(UploadRequest $request)
+    {
+        // Kiểm tra yêu cầu có file hay không
+        if ($request->hasFile('image')) {
+            // Lưu file vào thư mục public/uploads
+            $file = $request->file('image');
+            $filePath = $file->store('uploads', 'public');
+            $fileName = $file->getClientOriginalName();
+
+            // Lấy đường dẫn đầy đủ (bao gồm cả domain)
+            $absoluteUrl = url(Storage::url($filePath));  // url() lấy domain và Storage::url() lấy đường dẫn file
+
+            // Lưu thông tin file vào cơ sở dữ liệu
+            $image = Output::create([
+                'name' => $fileName,
+                'url' => $absoluteUrl,  // Lưu đường dẫn đầy đủ
+                'status' => 1,
+                'created_by' => Auth::id(),   // Lưu ID người dùng hiện tại
+            ]);
+
+            return response()->json([
+                'message' => 'Upload thành công!',
+                'image_info' => $image
+            ]);
+        }
+
+        return response()->json(['message' => 'Không có file nào được upload'], 400);
     }
 
     /**
@@ -407,6 +485,95 @@ class MoneyComesBackController extends Controller
         return response()->json([
             'code' => 400,
             'error' => 'Kết toán lô không thành công',
+            'data' => null
+        ]);
+    }
+
+    public function approved(ApproveRequest $request)
+    {
+        $id = request('id', null);
+
+        $resutl = $this->money_repo->approve($id);
+
+        if ($resutl) {
+            return response()->json([
+                'code' => 200,
+                'error' => 'Duyệt lô thành công',
+                'data' => null
+            ]);
+        }
+
+        return response()->json([
+            'code' => 400,
+            'error' => 'Duyệt lô không thành công',
+            'data' => null
+        ]);
+    }
+
+    public function withdraw(WithdrawRequest $request){
+
+        $id = request('id', null);
+
+        $money = $this->money_repo->getById($id);
+        if(!$money){
+            return response()->json([
+                'code' => 400,
+                'error' => 'Không tìm thấy thông tin giao dịch',
+                'data' => null
+            ]);
+        }
+
+        // Số tk liên kết pos
+        $bank_pos = $this->bankAccRepo->getById($money->pos->bank_account);
+        if(!$bank_pos){
+            return response()->json([
+                'code' => 400,
+                'error' => 'Không tìm thấy thông tin tài khoản ngân hàng liên kết máy POS',
+                'data' => null
+            ]);
+        }
+
+        // Số tk liên kết đại lý
+        $bank_agent = $this->bankAccRepo->getByAgentId($money->agency->id);
+        if(!$bank_agent){
+            return response()->json([
+                'code' => 400,
+                'error' => 'Không tìm thấy thông tin tài khoản ngân hàng liên kết đại lý',
+                'data' => null
+            ]);
+        }
+        $params = [
+            'acc_bank_from_id' => $bank_pos->id,
+            'acc_number_from' => $bank_pos->account_number,
+            'acc_name_from' => $bank_pos->account_name,
+            'acc_bank_to_id' => $bank_agent->id,
+            'acc_number_to' => $bank_agent->account_number,
+            'acc_name_to' => $bank_agent->account_name,
+            'bank_to' => $bank_agent->bank_code,
+            'bank_from' => $bank_pos->bank_code,
+            'type_from' => Constants::ACCOUNT_TYPE_POS,
+            'type_to' => Constants::ACCOUNT_TYPE_AGENCY,
+            'time_payment' => date('Y-m-d H:i:s'),
+            'created_by' => auth()->user()->id,
+            'price' => $money->payment,
+            'status' => Constants::USER_STATUS_ACTIVE,
+            'from_agent_id' => $money->pos->id,
+            'to_agent_id' => $money->agency->id,
+        ];
+        $resutl = $this->transfer_repo->storeWithdraw($params);
+
+        if ($resutl) {
+            $this->money_repo->withdraw($id); // Cập nhật trạng thái đi tiền của kế toán
+            return response()->json([
+                'code' => 200,
+                'error' => 'Kế toán đi tiền thành công',
+                'data' => null
+            ]);
+        }
+
+        return response()->json([
+            'code' => 400,
+            'error' => 'Kế toán đi tiền không thành công',
             'data' => null
         ]);
     }

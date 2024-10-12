@@ -8,11 +8,13 @@ use App\Helpers\Constants;
 use App\Models\Agent;
 use App\Models\Pos;
 use App\Repositories\Agent\AgentRepo;
+use App\Repositories\BankAccount\BankAccountRepo;
 use App\Repositories\BaseRepo;
 use App\Repositories\HoKinhDoanh\HoKinhDoanhRepo;
 use App\Repositories\Pos\PosRepo;
 use App\Repositories\Transfer\TransferRepo;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
 class MoneyComesBackRepo extends BaseRepo
@@ -125,16 +127,16 @@ class MoneyComesBackRepo extends BaseRepo
         $date_from = $params['date_from'] ?? null;
         $date_to = $params['date_to'] ?? null;
         $pos_id = $params['pos_id'] ?? 0;
-        $created_by = $params['created_by'] ?? 0;
+        $created_by = $params['created_by'] ?? Auth::user()->id;
         $agent_id = $params['agent_id'] ?? 0;
-        $account_type = $params['account_type'] ?? Constants::ACCOUNT_TYPE_STAFF;
+        $account_type = $params['account_type'] ?? Auth::user()->account_type;
 
         $query = MoneyComesBack::select()->with([
             'pos' => function ($sql) {
-                $sql->select(['id', 'name', 'bank_code']);
+                $sql->select(['id', 'name', 'bank_code', 'price_pos']);
             },
             'agency' => function ($sql) {
-                $sql->select(['id', 'name', 'balance']);
+                $sql->select(['id', 'name', 'balance', 'manager_id']);
             },
             'user' => function ($sql) {
                 $sql->select(['id', 'status', 'username', 'email', 'fullname']);
@@ -181,6 +183,10 @@ class MoneyComesBackRepo extends BaseRepo
             $query->where('status', $status);
         } else {
             $query->where('status', '!=', Constants::USER_STATUS_DELETED);
+        }
+
+        if($account_type == Constants::ACCOUNT_TYPE_STAFF) {
+            $query->where('created_by', $created_by);
         }
 
         if ($is_counting) {
@@ -413,6 +419,7 @@ class MoneyComesBackRepo extends BaseRepo
             'status',
             'fee_agent',
             'payment_agent',
+            'img_bill',
         ];
 
         $insert = [];
@@ -471,6 +478,7 @@ class MoneyComesBackRepo extends BaseRepo
             'status',
             'fee_agent',
             'payment_agent',
+            'img_bill',
         ];
 
         $update = [];
@@ -715,7 +723,7 @@ class MoneyComesBackRepo extends BaseRepo
         $tran = MoneyComesBack::select()->where('id', $id);
         $tran->with([
             'pos' => function ($sql) {
-                $sql->select(['id', 'name']);
+                $sql->select(['id', 'name', 'bank_account']);
             },
             'agency' => function ($sql) {
                 $sql->select(['id', 'name']);
@@ -788,7 +796,7 @@ class MoneyComesBackRepo extends BaseRepo
         $tran = MoneyComesBack::where('id', $id);
         $tran->with([
             'pos' => function ($sql) {
-                $sql->select(['id', 'name']);
+                $sql->select(['id', 'name', 'bank_account']);
             },
             'agency' => function ($sql) {
                 $sql->select(['id', 'name']);
@@ -901,6 +909,8 @@ class MoneyComesBackRepo extends BaseRepo
         $date_to = $params['date_to'] ?? null;
         $pos_id = $params['pos_id'] ?? 0;
         $agent_id = $params['agent_id'] ?? 0;
+        $account_type = $params['account_type'] ?? Auth::user()->account_type;
+        $created_by = $params['created_by'] ?? Auth::user()->id;
 
         $query = MoneyComesBack::select();
 
@@ -932,6 +942,10 @@ class MoneyComesBackRepo extends BaseRepo
 
         if ($lo_number > 0) {
             $query->where('lo_number', $lo_number);
+        }
+
+        if($account_type == Constants::ACCOUNT_TYPE_STAFF) {
+            $query->where('created_by', $created_by);
         }
 
         $query->whereNotNull('agent_id');
@@ -1069,6 +1083,78 @@ class MoneyComesBackRepo extends BaseRepo
 
         return MoneyComesBack::where('id', $id)->update($update);
     }
+
+    public function approve($id)
+    {
+        $status = Constants::USER_STATUS_APPROVED;
+        $update = ['status' => $status];
+
+        // Bắt đầu transaction
+        DB::beginTransaction();
+
+        try {
+            // Lấy dữ liệu MoneyComesBack
+            $moneyComesBack = MoneyComesBack::where('id', $id)->first();
+            if (!$moneyComesBack) {
+                throw new \Exception("Không tìm thấy lô tiền về với id: $id");
+            }
+
+            // Xử lý POS
+            $pos = Pos::where('id', $moneyComesBack->pos_id)->first();
+            if ($pos) {
+                $pos_balance = $pos->price_pos - ($moneyComesBack->total_price - ($moneyComesBack->fee * $moneyComesBack->total_price) / 100);
+                $pos_repo = new PosRepo();
+                $pos_repo->updatePricePos($pos_balance, $pos->id, "APPROVE_MONEY_COMES_BACK_" . $id);
+
+                // Xử lý tài khoản ngân hàng của POS
+                $bank_account = new BankAccountRepo();
+                $bank = $bank_account->getById($pos->bank_account);
+                if (!$bank) {
+                    throw new \Exception("Không tìm thấy tài khoản ngân hàng của POS");
+                }
+                $acc_balance = $bank->balance + ($moneyComesBack->total_price - ($moneyComesBack->fee * $moneyComesBack->total_price) / 100);
+                $bank_account->updateBalance($bank->id, $acc_balance, "APPROVE_MONEY_COMES_BACK_" . $id);
+            }
+
+            // Xử lý tiền tồn HKD
+            $hkd_repo = new HoKinhDoanhRepo();
+            $hkd = $hkd_repo->getById($moneyComesBack->hkd_id);
+            if ($hkd) {
+                $hkd_balance = $hkd->balance - ($moneyComesBack->total_price - ($moneyComesBack->fee * $moneyComesBack->total_price) / 100);
+                $hkd_repo->updateBalance($hkd_balance, $hkd->id, "APPROVE_MONEY_COMES_BACK_" . $id);
+            }
+
+            // Xử lý tiền tồn agent
+            $agent_old = Agent::where('id', $moneyComesBack->agent_id)->first();
+            if ($agent_old) {
+                $agent_balance = $agent_old->balance + $moneyComesBack->payment_agent;
+                $agent_repo = new AgentRepo();
+                $agent_repo->updateBalance($agent_old->id, $agent_balance, "APPROVE_MONEY_COMES_BACK_" . $id);
+            }
+
+            // Cập nhật trạng thái moneyComesBack
+            $moneyComesBack->update($update);
+
+            // Commit transaction khi mọi thứ thành công
+            DB::commit();
+            return true;
+        } catch (\Exception $e) {
+            // Rollback nếu có lỗi
+            DB::rollBack();
+            // Log lỗi nếu cần
+            // Log::error($e->getMessage());
+            return false;
+        }
+    }
+
+    public function withdraw($id)
+    {
+        $status = Constants::USER_STATUS_WITHDRAW;
+        $update = ['status' => $status];
+
+        return MoneyComesBack::where('id', $id)->update($update);
+    }
+
     public function getTopAgency($params)
     {
         $date_from = Carbon::parse($params['date_from'] ?? Carbon::now()->startOfDay())->startOfDay();

@@ -215,6 +215,22 @@ class AgentRepo extends BaseRepo
         return $tran->first();
     }
 
+    /**
+     * Hàm lấy chi tiết thông tin GD
+     *
+     * @param $params
+     */
+    public function getByUserId($id, $with_trashed = false)
+    {
+        $tran = Agent::where('manager_id', $id);
+
+        if ($with_trashed) {
+            $tran->withTrashed();
+        }
+
+        return $tran->first();
+    }
+
     public function changeStatus($status, $id)
     {
         $update = ['status' => $status];

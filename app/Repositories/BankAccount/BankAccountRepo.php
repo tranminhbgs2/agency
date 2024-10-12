@@ -219,13 +219,36 @@ class BankAccountRepo extends BaseRepo
      *
      * @param $params
      */
-    public function getById($id, $with_trashed = false)
+    public function getById($id, $with_trashed = false, $agent_id = 0, $type = null)
     {
         $tran = BankAccounts::select()->with('agency')->with('staff')->where('id', $id);
 
+        if ($agent_id > 0) {
+            $tran->where('agent_id', $agent_id);
+        }
+
+        if ($type) {
+            $tran->where('type', $type);
+        }
         if ($with_trashed) {
             $tran->withTrashed();
         }
+
+        return $tran->first();
+    }
+
+    /**
+     * Hàm lấy chi tiết thông tin GD
+     *
+     * @param $params
+     */
+    public function getByAgentId($agent_id)
+    {
+        $tran = BankAccounts::select()->with('agency')->with('staff');
+
+        $tran->where('agent_id', $agent_id);
+
+        $tran->where('type', Constants::ACCOUNT_TYPE_AGENCY);
 
         return $tran->first();
     }
@@ -371,6 +394,12 @@ class BankAccountRepo extends BaseRepo
     public function getAccountAgency($id)
     {
         $dep = BankAccounts::where('type', Constants::ACCOUNT_TYPE_AGENCY)->where('agent_id', $id)->where('status', Constants::USER_STATUS_ACTIVE)->get()->toArray();
+
+        return $dep;
+    }
+    public function getAccountPos($id)
+    {
+        $dep = BankAccounts::where('type', Constants::ACCOUNT_TYPE_POS)->where('agent_id', $id)->where('status', Constants::USER_STATUS_ACTIVE)->get()->toArray();
 
         return $dep;
     }

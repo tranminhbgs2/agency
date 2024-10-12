@@ -4,8 +4,10 @@ namespace App\Repositories\Transfer;
 
 use App\Helpers\Constants;
 use App\Models\Transfer;
+use App\Repositories\BankAccount\BankAccountRepo;
 use App\Repositories\BaseRepo;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class TransferRepo extends BaseRepo
 {
@@ -241,6 +243,73 @@ class TransferRepo extends BaseRepo
         return false;
     }
 
+    public function storeWithdraw($params)
+    {
+        $fillable = [
+            'acc_bank_from_id',
+            'acc_number_from',
+            'acc_name_from',
+            'acc_bank_to_id',
+            'acc_number_to',
+            'acc_name_to',
+            'bank_to',
+            'bank_from',
+            'type_from',
+            'type_to',
+            'time_payment',
+            'created_by',
+            'price',
+            'status',
+            'from_agent_id',
+            'to_agent_id',
+        ];
+
+        $insert = [];
+
+        foreach ($fillable as $field) {
+            if (isset($params[$field]) && !empty($params[$field])) {
+                $insert[$field] = $params[$field];
+            }
+        }
+
+        if (!empty($insert['acc_bank_from_id']) && !empty($insert['acc_bank_to_id'])) {
+            // Bắt đầu transaction
+            DB::beginTransaction();
+
+            try {
+                // Tạo bản ghi chuyển khoản
+                $res = Transfer::create($insert);
+                if ($res) {
+                    // Trừ tiền trong tài khoản chuyển
+                    $bankAccount = new BankAccountRepo();
+                    $bankAccount->updateBalanceTransfer($params['acc_bank_from_id'], $params['price'], "CREATE_" . $res->id);
+
+                    // Cộng tiền trong tài khoản nhận
+                    $bankTo = $bankAccount->getById($params['acc_bank_to_id']);
+                    if (!$bankTo) {
+                        throw new \Exception("Không tìm thấy tài khoản ngân hàng nhận với ID: " . $params['acc_bank_to_id']);
+                    }
+
+                    $bankTo_balance = $bankTo->balance + $params['price'];
+                    $bankAccount->updateBalance($params['acc_bank_to_id'], $bankTo_balance, "CREATE_" . $res->id);
+
+                    // Commit transaction nếu mọi thứ thành công
+                    DB::commit();
+
+                    return $res->id;
+                }
+            } catch (\Exception $e) {
+                // Rollback nếu có lỗi xảy ra
+                DB::rollBack();
+                // Log lỗi nếu cần
+                // Log::error($e->getMessage());
+                return false;
+            }
+        }
+
+        return false;
+    }
+
     public function update($params, $id)
     {
         $fillable = [
@@ -401,14 +470,14 @@ class TransferRepo extends BaseRepo
                 // Handle invalid date format
             }
         }
-        if($type == "TO"){
+        if ($type == "TO") {
             $query->where('type_to', "AGENCY");
         } else {
             $query->where('type_from', "AGENCY");
         }
 
         if ($agent_id > 0) {
-            if($type == "TO"){
+            if ($type == "TO") {
                 $query->where('to_agent_id', $agent_id);
             } else {
                 $query->where('from_agent_id', $agent_id);
@@ -520,7 +589,7 @@ class TransferRepo extends BaseRepo
         if ($type == 'TO') {
             $query_transfer->where('to_agent_id', $id)
                 ->where('type_to', Constants::ACCOUNT_TYPE_STAFF);
-        }elseif ($type == "FROM") {
+        } elseif ($type == "FROM") {
             $query_transfer->where('from_agent_id', $id)
                 ->where('type_from', Constants::ACCOUNT_TYPE_STAFF);
         }

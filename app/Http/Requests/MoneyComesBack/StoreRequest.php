@@ -47,6 +47,7 @@ class StoreRequest extends FormRequest
             'agent_id' => 'numeric|min:0',
             'fee_agent' => 'required_if:agent_id,>,0|numeric|min:0',
             'is_duplicate' => 'boolean',
+            'img_bill' => 'required'
 
         ];
 
@@ -64,6 +65,7 @@ class StoreRequest extends FormRequest
             'time_end' => 'Thời gian kết toán',
             'agent_id' => 'ID đại lý',
             'fee_agent' => 'Phí đại lý',
+            'img_bill' => 'Hình ảnh hóa đơn'
         ];
     }
 
@@ -77,6 +79,9 @@ class StoreRequest extends FormRequest
             'agent_id.numeric' => 'ID đại lý phải là số',
             'agent_id.min' => 'ID đại lý phải lớn hơn 0',
             'fee_agent.required_if' => 'Phí đại lý không được để trống',
+            'fee_agent.numeric' => 'Phí đại lý phải là số',
+            'fee_agent.min' => 'Phí đại lý phải lớn hơn 0',
+            'img_bill.required' => 'Hình ảnh hóa đơn không được để trống'
 
         ];
     }
@@ -88,9 +93,13 @@ class StoreRequest extends FormRequest
     {
         $validator->after(function ($validator) {
             // Check username
-            if($this->request->has('is_duplicate') == false){
+            if ($this->request->has('is_duplicate') == false) {
+
+                $time_end = str_replace('/', '-', $this->request->get('time_end'));
+                $time_process = date('Y-m-d', strtotime($time_end));
                 $dep = MoneyComesBack::where('pos_id', $this->request->get('pos_id'))
                     ->where('lo_number', $this->request->get('lo_number'))
+                    ->where('time_process', $this->request->get('time_process'))
                     ->first();
 
                 if ($dep) {

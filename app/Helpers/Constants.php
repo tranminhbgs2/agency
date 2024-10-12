@@ -37,6 +37,7 @@ class Constants
     const TABLE_CATEGORIES = 'categories';
     const TABLE_BANK_ACCOUNTS = 'bank_accounts';
     const TABLE_CASH_FLOW = 'cash_flow';
+    const TABLE_OUTPUT = 'output';
 
 
 
@@ -58,6 +59,9 @@ class Constants
     const USER_STATUS_LOCKED = 2;
     const USER_STATUS_DELETED = 3;
     const USER_STATUS_DRAFT = 4;
+    const USER_STATUS_CHUA_KET_TOAN = 2;
+    const USER_STATUS_APPROVED = 5; // duyệt
+    const USER_STATUS_WITHDRAW = 6; //đã rút tiền
 
     const SCHOOL_STATUS_NEW = 0;
     const SCHOOL_STATUS_ACTIVE = 1;
@@ -71,6 +75,7 @@ class Constants
     const ACCOUNT_TYPE_SYSTEM = 'SYSTEM';
     const ACCOUNT_TYPE_STAFF = 'STAFF';
     const ACCOUNT_TYPE_AGENCY = 'AGENCY';
+    const ACCOUNT_TYPE_POS = 'POS';
     const ACCOUNT_TYPE_ACCOUNTANT = 'ACCOUNTANT';
 
     const OPT_TYPE = 'FORGOT_PASSWORD,CUSTOMER_REQUEST_DEPOSIT,REQUEST_WITHDRAW,CUSTOMER_VERIFY,CREATE_OTP_PASSWORD,VERIFY_OTP_PASSWORD,CUSTOMER_REGISTER';

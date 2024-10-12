@@ -29,6 +29,7 @@ class MoneyComesBack extends Model
         'fee_agent',
         'payment_agent',
         'note',
+        'img_bill',
     ];
 
     /**

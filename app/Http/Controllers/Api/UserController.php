@@ -234,6 +234,7 @@ class UserController extends Controller
         if ($resutl) {
             $this->cus_repo->attachPositions($resutl, request('action_ids', []) ?? []);
 
+            $params['manager_id'] = $resutl;
             $id = $this->agent_repo->store($params);
 
             if ($id > 0) {
